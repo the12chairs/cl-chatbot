@@ -41,18 +41,20 @@
 	   (print (search-answer i)))))
 
 
-
+(defun answer (phrase)
+  (search-answers (prepare-phrase phrase)))
 
 (defun learn (key)
   (let* ((query-for-key (concatenate 'string
 				     "SELECT id_key FROM keywords WHERE word = \""
-				     key
+				     (princ-to-string key)
 				     "\";")))
-    (if (equal (caaar (cl-mysql:query query-for-key)) nil)
+    (if (equal (caaar (cl-mysql:query query-for-key)) nil) ; Если нет ключа в базе
 	(progn
+	  ;;(print "Добавляю несуществующий ключ в базу")
 	  (let* ((query-insert (concatenate 'string
 					    "INSERT INTO keywords (word) VALUES (\""
-					    key
+					    (princ-to-string key)
 					    "\");")))
 	    (cl-mysql:query query-insert))
 	  (let* ((query-get-id (concatenate 'string
@@ -70,18 +72,46 @@
 					      my-answer
 					      "\""
 					      ");")))
-	      (cl-mysql:query query-answer)))))))
-	
+	      (cl-mysql:query query-answer))))
+	(progn                                         ; Если есть ключ в базе
+	  ;;(print "Ключ есть в базе")
+	  (let* ((query-get-id (concatenate 'string
+					    "SELECT id_key FROM keywords WHERE word = \""
+					    (princ-to-string key)
+					    "\";"))
+		 (key-id (caaar (cl-mysql:query query-get-id)))
+		 (query-for-phrases (concatenate 'string 
+						 "SELECT id_phrase FROM phrases WHERE id_key = \""
+						 (princ-to-string (car key-id)) ;; Проблема тут!!!!!
+						 "\";")))
+	    (if (not (equal (caaar (cl-mysql:query query-for-phrases)) nil)) ; Если есть ответы на ключ
+		(progn
+		  ;;(print "Ответ на ключ:")
+		  (print (search-answer key)))
+		(progn
+		  ;;(print "Нет ответов на заданный ключ")
+		  (let* ((query-get-id (concatenate 'string
+					"SELECT id_key FROM keywords WHERE word = \""
+					(princ-to-string key)
+					"\";"))
+			 (new-id (caaar (cl-mysql:query query-get-id))))
+		    (format t "Что ответить на это?~%")
+		    (let* ((my-answer (read-line))
+			   (query-answer (concatenate 'string
+						      "INSERT INTO phrases (id_key, phrase) VALUES ("
+						      (princ-to-string new-id)
+						      ", "
+						      "\"" 
+						      my-answer
+						      "\""
+						      ");")))
+		      (cl-mysql:query query-answer))))))))))
 
 
-(defun answer (phrase)
-  (search-answers (prepare-phrase phrase)))
 
-
-
-
-(defun 
-
+(defun answer-learn (phrase)
+  (learn (car (last (prepare-phrase phrase)))))
+  
 (defun get-word ()
   (format t "Введите слово: ~%")
   (let* ((word (read))
@@ -117,3 +147,4 @@
       (progn
 	(get-word)
 	(get-words (- i 1)))))
+
