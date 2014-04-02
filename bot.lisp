@@ -1,5 +1,6 @@
 (ql:quickload 'cl-mysql)
 (ql:quickload 'split-sequence)
+(ql:quickload 'usocket)
 
 (defun connects ()
   (cl-mysql:connect :host "127.0.0.1"
@@ -10,8 +11,6 @@
 (defun disconnects ()
   (cl-mysql:disconnect))
 
-
-
 (defun prepare-phrase (phrase)
   ;; Разрезать строку на слова, удалить знаки препинания
   (let* ((splited-phrase (split-sequence:split-sequence #\Space phrase))
@@ -21,6 +20,13 @@
 	 (setq i (remove #\. i))
 	 (setq i (remove #\! i))
 	 (setq i (remove #\? i))
+	 (setq i (remove #\( i))
+	 (setq i (remove #\) i))
+	 (setq i (remove #\: i))
+	 (setq i (remove #\$ i))
+	 (setq i (remove #\; i))
+	 (setq i (remove #\' i))
+	 (setq i (remove #\" i))
 	 (setq i (string-upcase i))
 	 (push i prepared-phrase))
     prepared-phrase))
@@ -33,16 +39,19 @@
 				     "\"")))
    (car (caaar (cl-mysql:query query-for-word)))))
 
-(defun hi-priority-word (prep-phrase)
+(defun hi-priority-word (prep-phrase)  
+  (loop for i in prep-phrase do
+       (if (equal (get-prior i) nil)
+	     (add-key i)))
   (let* ((max-prior-word (car prep-phrase))
 	 (max-prior (get-prior (car prep-phrase))))
-    (loop for i in prep-phrase do
-	 (if (not (equal (get-prior i) nil))
-	     (if (> (get-prior i) max-prior)
-		 (progn
-		   (setq max-prior (get-prior i))
-		   (setq max-prior-word i)))))
-    max-prior-word))     
+    (loop for i in (cdr prep-phrase) do
+	 (progn
+	   (if (> (get-prior i) max-prior)
+	       (progn
+		 (setq max-prior (get-prior i))
+		 (setq max-prior-word i)))))
+    max-prior-word))
 	   
 (defun search-answer (key)
   (let* ((query-to-key (concatenate 'string
@@ -57,10 +66,6 @@
   (loop for i in list-keys do
        (if (not (equal (search-answer i) nil))
 	   (print (search-answer i)))))
-
-
-(defun answer (phrase)
-  (search-answers (prepare-phrase phrase)))
 
 
 (defun up-priority (key)
@@ -90,11 +95,6 @@
 	t)))
 
 
-  (let ((prep-phrase (prepare-phrase phrase)))
-    (loop for i in prep-phrase do
-	 (if (equal (test-word i) nil)
-	     (add-key i)))))
-
 
 (defun add-key (key)
   (let* ((query-insert (concatenate 'string
@@ -102,37 +102,6 @@
 				    (princ-to-string key)
 				    "\");")))
     (cl-mysql:query query-insert)))
-
-;; Depricated
-(defun get-word ()
-  (format t "Введите слово: ~%")
-  (let* ((word (read))
-	 (query-text (concatenate 'string
-				  "SELECT id_key FROM keywords WHERE word = \"" 
-				  (princ-to-string word)
-				  "\";")))
-    (if (equal (caar (cl-mysql:query query-text)) nil)
-	(let* ((query-insert (concatenate 'string
-					 "INSERT INTO keywords (word) VALUES (\""
-					 (princ-to-string word)
-					 "\");")))
-	  (cl-mysql:query query-insert)))
-    (let* ((query-get-id (concatenate 'string
-				      "SELECT id_key FROM keywords WHERE word = \""
-				      (princ-to-string word)
-				      "\";"))
-	   (new-id (caaar (cl-mysql:query query-get-id))))
-      (format t "Что ответить на это?~%")
-      (let* ((my-answer (read-line))
-	     (query-answer (concatenate 'string
-					"INSERT INTO phrases (id_key, phrase) VALUES ("
-					(princ-to-string new-id)
-					", "
-					"\"" 
-					my-answer
-					"\""
-					");")))
-	(cl-mysql:query query-answer)))))
 
 
 (defun learn (key)
@@ -164,11 +133,15 @@
 						phrase
 						"\");")))
 		(cl-mysql:query query-to-add)))
-	    (format t "~A" (car (search-answer key)))))))
+	    (format t "~A~%" (car (search-answer key)))))))
 
 
 (defun chat (phrase)
   (let ((key (hi-priority-word 
 	      (prepare-phrase phrase))))
-    (learn key))
+    (learn key)))
 
+(defun main ()
+  (connects)
+  (loop
+       (chat (read-line))))
